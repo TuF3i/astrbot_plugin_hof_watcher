@@ -1,0 +1,14 @@
+{
+  "base_url": {
+    "description": "HallOfFame 后端 API 地址",
+    "type": "string",
+    "hint": "Bot API 服务器地址，默认端口 9090",
+    "default": "http://localhost:9090"
+  },
+  "enabled_groups": {
+    "description": "启用消息采集的群号列表",
+    "type": "list",
+    "hint": "填写需要启用消息采集的 QQ 群号，留空则不对任何群生效",
+    "default": []
+  }
+}

@@ -1,0 +1,801 @@
+openapi: "3.0.3"
+info:
+  title: HallOfFame API
+  description: |
+    HallOfFame（名人堂）是一个 QQ 群聊天记录管理与恶搞分析平台。
+
+    ## 通用约定
+    - 所有接口 HTTP Status Code 统一为 `200`，业务状态码见 body 中的 `code` 字段
+    - 分页参数统一为 `page`（从 1 开始）和 `page_size`
+    - JWT Token 放在 Header: `Authorization: Bearer <token>`
+
+    ## 业务错误码
+    | code | 含义 |
+    |------|------|
+    | 10200 | 成功 |
+    | 40000 | 请求参数错误 |
+    | 40100 | 未认证 |
+    | 40300 | 无权限 |
+    | 40400 | 资源不存在 |
+    | 40900 | 资源冲突 |
+    | 50000 | 服务器内部错误 |
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Web API（用户/管理接口）
+  - url: http://localhost:9090
+    description: Bot API（QQ 机器人消息采集接口）
+
+tags:
+  - name: Auth
+    description: 认证（公开）
+  - name: Quotes
+    description: 金句（需 JWT）
+  - name: Admin
+    description: 管理（需 JWT + Admin）
+  - name: Bot
+    description: QQ Bot 消息采集（公开，独立端口 9090）
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ═══════════════ 扁平化响应 ═══════════════
+    # 每个接口的响应 schema 都完整包含 code / msg / data，不使用 allOf 组合
+
+    # Auth 响应
+    RegisterResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            uid:
+              type: string
+            email:
+              type: string
+            nickname:
+              type: string
+            access_token:
+              type: string
+            refresh_token:
+              type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+            refresh_token:
+              type: string
+            user:
+              $ref: "#/components/schemas/UserInfo"
+
+    RefreshResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+            refresh_token:
+              type: string
+
+    OkResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data: {}
+
+    # Quotes 分页响应
+    SpeakerPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Speaker"
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+
+    QuotePageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Quote"
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+
+    # Admin 角色更新响应
+    UpdateRoleResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          $ref: "#/components/schemas/UserInfo"
+
+    UserPageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        msg:
+          type: string
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/UserInfo"
+            total:
+              type: integer
+            page:
+              type: integer
+            page_size:
+              type: integer
+
+    # 请求 Schema
+    RegisterRequest:
+      type: object
+      required: [email, password, nickname]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        nickname:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    UpdateRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [admin, user, banned]
+
+    SetFeaturedRequest:
+      type: object
+      required: [featured]
+      properties:
+        featured:
+          type: boolean
+
+    # 实体 Schema
+    UserInfo:
+      type: object
+      properties:
+        uid:
+          type: string
+        email:
+          type: string
+        nickname:
+          type: string
+        role:
+          type: string
+          enum: [admin, user, banned]
+
+    Quote:
+      type: object
+      properties:
+        qid:
+          type: string
+        content:
+          type: string
+        suppression:
+          type: number
+        userdata:
+          $ref: "#/components/schemas/UserMeta"
+        groupdata:
+          $ref: "#/components/schemas/GroupData"
+        attachmentid:
+          type: array
+          items:
+            type: string
+        is_featured:
+          type: boolean
+
+    UserMeta:
+      type: object
+      properties:
+        qqnumber:
+          type: string
+        speaker:
+          type: string
+        avatar:
+          type: string
+
+    GroupData:
+      type: object
+      properties:
+        groupnumber:
+          type: string
+        groupname:
+          type: string
+        avatar:
+          type: string
+
+    Speaker:
+      type: object
+      properties:
+        qqnumber:
+          type: string
+        speaker:
+          type: string
+        avatar:
+          type: string
+        quote_count:
+          type: integer
+
+paths:
+  # ═══════════════ Auth ═══════════════
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: 注册
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      description: banned 用户返回 code=40300
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: 刷新 JWT
+      operationId: refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+
+  # ═══════════════ Quotes（需 JWT） ═══════════════
+  /api/quotes/speakers:
+    get:
+      tags: [Quotes]
+      summary: 获取发言者列表
+      operationId: listSpeakers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpeakerPageResponse"
+
+  /api/quotes/speakers/{qqNumber}/quotes:
+    get:
+      tags: [Quotes]
+      summary: 获取某发言者的发言
+      operationId: listSpeakerQuotes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: qqNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotePageResponse"
+
+  /api/quotes/featured:
+    get:
+      tags: [Quotes]
+      summary: 获取精华发言列表
+      operationId: listFeaturedQuotes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotePageResponse"
+
+  /api/quotes/attachments/{qid}/{attId}:
+    get:
+      tags: [Quotes]
+      summary: 获取附件图片
+      description: 返回图片二进制流。qid 为发言ID，attId 为附件ID
+      operationId: getAttachment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: attId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 图片二进制数据
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+
+  # ═══════════════ Admin（需 JWT + Admin） ═══════════════
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: 获取用户列表
+      operationId: listUsers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPageResponse"
+
+  /api/admin/users/{uid}/role:
+    put:
+      tags: [Admin]
+      summary: 修改用户角色
+      description: banned 时自动清除 Redis Token
+      operationId: updateRole
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateRoleResponse"
+
+  /api/admin/users/{uid}:
+    delete:
+      tags: [Admin]
+      summary: 删除用户
+      description: 同时清除该用户全部 Token
+      operationId: deleteUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/admin/quotes/trigger:
+    post:
+      tags: [Admin]
+      summary: 手动触发 AI 分析
+      description: 弹出 Redis 队列全部消息 → LLM 分析 → 高压抑度发言写入 MongoDB
+      operationId: triggerAnalysis
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/admin/quotes/{qid}/featured:
+    put:
+      tags: [Admin]
+      summary: 设置/取消精华
+      operationId: setFeatured
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetFeaturedRequest"
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/admin/quotes/{qid}:
+    delete:
+      tags: [Admin]
+      summary: 删除某条发言
+      description: 同时删除 MinIO 附件
+      operationId: deleteQuote
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: qid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/admin/speakers/{qqNumber}:
+    delete:
+      tags: [Admin]
+      summary: 删除发言者及所有发言
+      description: 同时删除所有 MinIO 附件
+      operationId: deleteSpeaker
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: qqNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/admin/quotes:
+    get:
+      tags: [Admin]
+      summary: 获取所有发言
+      operationId: listAllQuotes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotePageResponse"
+    post:
+      tags: [Admin]
+      summary: 新建发言
+      description: multipart/form-data；可选上传附件图片
+      operationId: createQuote
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [content, userdata]
+              properties:
+                content:
+                  type: string
+                  description: 发言内容
+                userdata:
+                  type: string
+                  description: 用户 JSON
+                groupdata:
+                  type: string
+                  description: 群 JSON
+                suppression:
+                  type: number
+                  description: 压抑值
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: 附件图片
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ═══════════════ Bot（独立端口 9090） ═══════════════
+  /api/bot/upload:
+    post:
+      tags: [Bot]
+      summary: QQ Bot 消息上传（支持附件）
+      description: 消息推入 Redis 队列，后台 Consumer 异步分析。使用 multipart/form-data，可选上传图片附件。
+      servers:
+        - url: http://localhost:9090
+          description: Bot API
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [qqgroup, qqnumber, speaker, content]
+              properties:
+                qqgroup:
+                  type: string
+                  description: 群号
+                qqnumber:
+                  type: string
+                  description: 发言者 QQ 号
+                speaker:
+                  type: string
+                  description: 发言者昵称
+                content:
+                  type: string
+                  description: 消息内容
+                avatar:
+                  type: string
+                  description: 用户头像 URL
+                groupname:
+                  type: string
+                  description: 群名称
+                groupavatar:
+                  type: string
+                  description: 群头像 URL
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: 附件图片
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /api/bot/import:
+    post:
+      tags: [Bot]
+      summary: 直接导入发言到数据库
+      description: 跳过 Redis 缓冲区，直接将发言写入 MongoDB。支持可选附件上传。
+      servers:
+        - url: http://localhost:9090
+          description: Bot API
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [qqgroup, qqnumber, speaker, content]
+              properties:
+                qqgroup:
+                  type: string
+                  description: 群号
+                qqnumber:
+                  type: string
+                  description: 发言者 QQ 号
+                speaker:
+                  type: string
+                  description: 发言者昵称
+                content:
+                  type: string
+                  description: 消息内容
+                avatar:
+                  type: string
+                  description: 用户头像 URL
+                groupname:
+                  type: string
+                  description: 群名称
+                groupavatar:
+                  type: string
+                  description: 群头像 URL
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: 附件图片
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotePageResponse"
